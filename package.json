@@ -1,0 +1,11 @@
+{
+  "name": "mizaniyati",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ميزانيتي — تطبيق PWA لإدارة الراتب والمصاريف وصندوق الطوارئ",
+  "scripts": {
+    "test:unit": "node --test tests/unit.test.mjs",
+    "test:e2e": "node tests/e2e.mjs"
+  }
+}
