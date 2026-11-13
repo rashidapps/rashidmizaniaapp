@@ -1,4 +1,6 @@
-import { h, icon, toast, field, openSheet, confirmDialog } from './ui.js';
+import { h, icon, toast, field, openSheet, confirmDialog, askSecret } from './ui.js';
+import { encryptText, decryptText, isEncryptedBackup } from './crypto.js';
+import { getLockInfo, enableEncryption, disableEncryption, changePassphrase, addPasskey, removePasskey, passkeySupported, checkPassphrase } from './security.js';
 import { buildBackup, validateBackupText, backupFilename, toCSV, deliverFile } from './backup.js';
 import { friendlyError } from './db.js';
 import { APP_VERSION } from './config.js';
@@ -11,6 +13,7 @@ export async function render(ctx) {
   const root = h('div', { class: 'page' });
   root.append(h('h1', { class: 'page-title' }, 'الإعدادات والنسخ الاحتياطي'));
   const snap = await store.getSnapshot();
+  const lock = await getLockInfo(store.db);
   const last = getLastBackupAt();
   const fileIn = h('input', { type: 'file', accept: '.json,application/json', hidden: true });
   let busy = false;
@@ -24,6 +27,16 @@ export async function render(ctx) {
     toast(r.method === 'share' ? 'اختر «حفظ في الملفات» من قائمة المشاركة' : 'تم تنزيل ملف النسخة الاحتياطية');
     app.refresh();
   });
+  const exportEncrypted = guard(async () => {
+    const pass = await askSecret({ title: 'نسخة احتياطية مشفّرة', message: 'اختر كلمة مرور للملف. ستحتاجها لاستعادة النسخة، ولا يمكن فتح الملف بدونها.', confirm: true, validate: checkPassphrase, submitText: 'تصدير' });
+    if (!pass) return;
+    const backup = await buildBackup(await store.db.exportAll());
+    const content = await encryptText(JSON.stringify(backup), pass);
+    const r = await deliverFile(backupFilename().replace('backup-', 'backup-enc-'), 'application/json', content);
+    if (r.cancelled) return;
+    setLastBackupAt(new Date().toISOString());
+    toast('تم تجهيز النسخة المشفّرة'); app.refresh();
+  });
   const exportCSV = scope => guard(async () => {
     const data = await store.db.exportAll();
     const csv = toCSV(data, scope === 'month' ? { monthId: ctx.month } : {});
@@ -36,6 +49,13 @@ export async function render(ctx) {
     if (!f) return;
     let text;
     try { text = await f.text(); } catch { toast('تعذّرت قراءة الملف', 'err'); return; } finally { fileIn.value = ''; }
+    if (isEncryptedBackup(text)) {
+      const pass = await askSecret({ title: 'نسخة مشفّرة', message: 'أدخل كلمة مرور هذه النسخة الاحتياطية.', submitText: 'فك التشفير' });
+      if (!pass) return;
+      const plain = await decryptText(text, pass);
+      if (plain === null) { toast('كلمة المرور خاطئة أو الملف تالف', 'err'); return; }
+      text = plain;
+    }
     const v = await validateBackupText(text);
     if (!v.ok) { await confirmDialog({ title: 'ملف غير صالح', message: v.errors.join('\n'), confirmText: 'حسناً', cancelText: 'إغلاق' }); return; }
     const c = v.summary.counts;
@@ -64,12 +84,53 @@ export async function render(ctx) {
     h('div', { style: 'display:flex;flex-direction:column;gap:10px' },
       h('button', { class: 'btn btn-primary', type: 'button', onClick: exportJSON }, icon('download', 18), 'تصدير نسخة احتياطية كاملة (JSON)'),
       h('button', { class: 'btn btn-ghost', type: 'button', onClick: () => fileIn.click() }, icon('upload', 18), 'استيراد واستعادة نسخة احتياطية'),
+      h('button', { class: 'btn btn-ghost', type: 'button', onClick: exportEncrypted }, icon('shield', 18), 'تصدير نسخة مشفّرة بكلمة مرور'),
       h('div', { class: 'grid2' },
         h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: exportCSV('month') }, 'CSV للشهر الحالي'),
         h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: exportCSV('all') }, 'CSV لكل البيانات')),
       snap ? h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: undoRestore }, icon('refresh', 16), 'التراجع عن آخر استعادة') : null),
     fileIn,
     h('p', { class: 'hint', style: 'margin-top:12px' }, 'عند التصدير تظهر قائمة المشاركة: اختر «حفظ في الملفات» ثم iCloud Drive. التطبيق لا يستطيع الرفع التلقائي إلى iCloud Drive؛ النسخ الدورية تتطلب أن تأخذها بنفسك أو إعداد اختصار/خدمة مناسبة لاحقاً.')));
+
+
+  const enableFlow = guard(async () => {
+    const p = await askSecret({ title: 'تفعيل التشفير والقفل', message: 'سيتم تشفير كل بياناتك على هذا الجهاز وطلب كلمة المرور عند فتح التطبيق. اختر كلمة مرور قوية ودوّنها في مكان آمن.', confirm: true, validate: checkPassphrase, ack: 'أفهم أنه لا يمكن استرجاع بياناتي إذا نسيت كلمة المرور (إلا من نسخة احتياطية غير مشفّرة).', submitText: 'تفعيل' });
+    if (!p) return;
+    toast('جارٍ تشفير البيانات…');
+    await enableEncryption(store.db, p);
+    toast('تم تفعيل التشفير والقفل'); app.refresh();
+  });
+  const disableFlow = guard(async () => {
+    const p = await askSecret({ title: 'إيقاف التشفير', message: 'سيُعاد حفظ بياناتك دون تشفير ويُزال القفل. أدخل كلمة المرور للتأكيد.', submitText: 'إيقاف التشفير' });
+    if (!p) return;
+    await disableEncryption(store.db, p);
+    toast('تم إيقاف التشفير'); app.refresh();
+  });
+  const changeFlow = guard(async () => {
+    const oldP = await askSecret({ title: 'تغيير كلمة المرور', message: 'أدخل كلمة المرور الحالية.', submitText: 'التالي' });
+    if (!oldP) return;
+    const newP = await askSecret({ title: 'كلمة المرور الجديدة', confirm: true, validate: checkPassphrase, label: 'كلمة المرور الجديدة', submitText: 'تغيير' });
+    if (!newP) return;
+    await changePassphrase(store.db, oldP, newP);
+    toast('تم تغيير كلمة المرور');
+  });
+  const faceOn = guard(async () => { await addPasskey(store.db); toast('تم تفعيل Face ID'); app.refresh(); });
+  const faceOff = guard(async () => { await removePasskey(store.db); toast('تم إيقاف Face ID'); app.refresh(); });
+  root.append(h('div', { class: 'card' }, h('h3', null, 'الأمان والتشفير'),
+    lock.enabled ? [
+      h('div', { class: 'kv' }, h('span', { class: 'k' }, 'التشفير'), h('span', { class: 'v pos' }, 'مفعّل (AES-256)')),
+      h('div', { class: 'kv' }, h('span', { class: 'k' }, 'الفتح بـ Face ID'), h('span', { class: 'v' }, lock.passkey ? 'مفعّل' : 'غير مفعّل')),
+      h('div', { style: 'display:flex;flex-direction:column;gap:10px;margin-top:12px' },
+        lock.passkey ? h('button', { class: 'btn btn-ghost', type: 'button', onClick: faceOff }, 'إيقاف Face ID')
+          : (passkeySupported() ? h('button', { class: 'btn btn-primary', type: 'button', id: 'btn-faceid', onClick: faceOn }, icon('shield', 18), 'تفعيل الفتح بـ Face ID') : h('p', { class: 'hint' }, 'مفاتيح المرور غير متاحة في هذا المتصفح.')),
+        h('div', { class: 'grid2' },
+          h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: () => location.reload() }, 'قفل الآن'),
+          h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onClick: changeFlow }, 'تغيير كلمة المرور')),
+        h('button', { class: 'btn btn-outline-danger btn-sm', type: 'button', onClick: disableFlow }, 'إيقاف التشفير')),
+      h('p', { class: 'hint', style: 'margin-top:12px' }, 'يقفل التطبيق نفسه بعد دقيقة من تركه. كلمة المرور هي وسيلة الاسترجاع الوحيدة؛ لا يمكن لأحد استرجاعها.')]
+    : [h('p', { class: 'muted', style: 'font-size:14px;margin-bottom:12px' }, 'التشفير غير مفعّل. فعّله لحماية بياناتك المالية بكلمة مرور وقفل للتطبيق.'),
+      h('button', { class: 'btn btn-primary', type: 'button', id: 'btn-enable-enc', onClick: enableFlow }, icon('shield', 18), 'تفعيل التشفير والقفل')],
+    h('p', { class: 'hint', style: 'margin-top:10px' }, 'المشفّر: الأسماء والمبالغ والملاحظات والتصنيفات والإعدادات. غير المشفّر: تواريخ العمليات ومعرّفات الأشهر (ضرورية للفرز).')));
 
   root.append(h('div', { class: 'card' }, h('h3', null, 'المصاريف البنكية'),
     h('p', { class: 'muted', style: 'font-size:14px;margin-bottom:10px' }, 'الصق نص رسائل الخصم من البنك أو استورد ملفاً نصياً ليتعرف التطبيق على المبلغ والمتجر والتاريخ.'),

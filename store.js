@@ -20,9 +20,11 @@ export class Store {
   }
   // نسخة مصغّرة من الإعدادات في LocalStorage (احتياطي فقط؛ المصدر الأساسي هو IndexedDB).
   async _mirror() {
+    if (this.db.encrypted) { try { localStorage.removeItem('mz.settings'); } catch { /* */ } return; }   // لا نسخ نصية عند التشفير
     try { localStorage.setItem('mz.settings', JSON.stringify(await this.getSettings())); } catch { /* التخزين غير متاح */ }
   }
   async init() {
+    if (this.db.encrypted) return;
     try {
       if ((await this.db.count('months')) === 0 && (await this.db.count('settings')) === 0) {
         const m = JSON.parse(localStorage.getItem('mz.settings') || 'null');
@@ -63,9 +65,11 @@ export class Store {
         id: uid(), monthId: id, name: f.name, amount: f.amount,
         dueDay: f.dueDay, note: f.note || '', createdAt: t, updatedAt: t,
       }));
+      const sealedMonth = await this.db.seal('months', month);
+      const sealedCopies = await this.db.sealAll('fixed', copies);
       await this.db.transact(['months', 'fixed'], st => {
         const r = st('months').get(id);
-        r.onsuccess = () => { if (!r.result) { st('months').put(month); copies.forEach(c => st('fixed').put(c)); } };
+        r.onsuccess = () => { if (!r.result) { st('months').put(sealedMonth); sealedCopies.forEach(c => st('fixed').put(c)); } };
       });
       return this.db.get('months', id);
     })();
@@ -95,10 +99,12 @@ export class Store {
     const cur = await this.db.get('months', monthId);
     const rec = { ...cur, salary, updatedAt: nowISO() };
     assertValid('months', rec);
+    const sealedMonth = await this.db.seal('months', rec);
+    const sealedDefault = monthId === currentMonth() ? await this.db.seal('settings', { key: 'defaultSalary', value: salary }) : null;
     await this.db.transact(['months', 'settings'], st => {
-      st('months').put(rec);
+      st('months').put(sealedMonth);
       // تعديل راتب الشهر الحالي يصبح الراتب الافتراضي للأشهر القادمة
-      if (monthId === currentMonth()) st('settings').put({ key: 'defaultSalary', value: salary });
+      if (sealedDefault) st('settings').put(sealedDefault);
     });
     await this._mirror();
     return rec;
@@ -208,7 +214,7 @@ export class Store {
   getSnapshot() { return this.db.get('snapshots', 'last'); }
   async restoreData(data) { await this.db.replaceAll(data); await this._mirror(); }
   async wipeAll() {
-    await this.db.clearData();
+    await this.db.clearData();   // يمسح البيانات وإعدادات القفل ويُسقط مفتاح التشفير من الذاكرة
     try { Object.keys(localStorage).filter(k => k.startsWith('mz.')).forEach(k => localStorage.removeItem(k)); } catch { /* */ }
   }
 }

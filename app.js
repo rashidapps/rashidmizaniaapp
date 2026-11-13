@@ -3,6 +3,9 @@ import { openDB, friendlyError } from './db.js';
 import { Store } from './store.js';
 import { h, icon, toast, openSheet } from './ui.js';
 import { currentMonth, monthLabel } from './dates.js';
+import { AUTO_LOCK_MS } from './config.js';
+import { getLockInfo } from './security.js';
+import { showLockScreen } from './lock-screen.js';
 import * as home from './page-home.js';
 import * as fixed from './page-fixed.js';
 import * as variable from './page-variable.js';
@@ -136,13 +139,24 @@ function fatal(msg) {
 async function boot() {
   let db;
   try { db = await openDB(); } catch (e) { console.error(e); return fatal(friendlyError(e)); }
+  app.db = db;
+  try {
+    const info = await getLockInfo(db);
+    if (info.enabled) await showLockScreen(db, info);   // لا تُقرأ أي بيانات قبل الفتح
+  } catch (e) { console.error(e); return fatal(friendlyError(e)); }
   app.store = new Store(db);
   try { await app.store.init(); await app.store.ensureMonth(currentMonth()); } catch (e) { console.error(e); return fatal(friendlyError(e)); }
   try { app.persisted = !!(navigator.storage && navigator.storage.persist && (await navigator.storage.persist())); } catch { /* */ }
   buildShell();
-  $('boot').remove();
+  $('boot')?.remove();
   $('app').hidden = false;
   window.addEventListener('hashchange', () => render());
+  // القفل التلقائي: عند العودة بعد غياب أطول من المدة المحددة يُعاد تحميل التطبيق فيسقط مفتاح التشفير من الذاكرة
+  let hiddenAt = 0;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') hiddenAt = Date.now();
+    else if (db.encrypted && hiddenAt && Date.now() - hiddenAt > AUTO_LOCK_MS) location.reload();
+  });
   window.addEventListener('db-versionchange', () => { toast('تم تحديث البيانات من نافذة أخرى. سيُعاد التحميل…', 'err'); setTimeout(() => location.reload(), 1200); });
   window.addEventListener('db-blocked', () => toast('أغلق نوافذ التطبيق الأخرى لإكمال التحديث', 'err'));
   let knownCurrent = currentMonth();

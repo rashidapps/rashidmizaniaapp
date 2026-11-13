@@ -1,6 +1,6 @@
 /* Service Worker — تخزين ملفات التطبيق للعمل دون إنترنت.
    عند إصدار نسخة جديدة: غيّر VERSION هنا وAPP_VERSION في config.js، وأضف أي ملف جديد إلى PRECACHE. */
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const CACHE = `mizaniyati-shell-${VERSION}`;
 const PRECACHE = [
   './', './index.html', './manifest.webmanifest', './style.css',
@@ -10,6 +10,7 @@ const PRECACHE = [
   './calc.js',
   './charts.js',
   './config.js',
+  './crypto.js',
   './dates.js',
   './db.js',
   './money.js',
@@ -22,6 +23,8 @@ const PRECACHE = [
   './page-variable.js',
   './prefs.js',
   './schema.js',
+  './security.js',
+  './lock-screen.js',
   './sms.js',
   './store.js',
   './ui.js',

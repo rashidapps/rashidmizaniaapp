@@ -228,3 +228,16 @@ details.card[open] > summary { margin-bottom: 8px; }
 .sec-title { font-size: 13px; color: var(--ink-2); font-weight: 700; padding: 6px 4px 0; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 @media (min-width: 600px) { body { background: var(--surface-2); } #app { background: var(--bg); box-shadow: 0 0 0 1px var(--line); } }
+
+/* ---------- شاشة القفل ---------- */
+.lockscreen { position: fixed; inset: 0; z-index: 200; background: var(--header); display: flex; align-items: center; justify-content: center; padding: calc(var(--sat) + 20px) 20px calc(var(--sab) + 20px); }
+.lock-card { width: 100%; max-width: 380px; background: var(--surface); border-radius: 26px; padding: 26px 22px 22px; text-align: center; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+.lock-card h1 { font-size: 26px; font-weight: 800; }
+.lock-ic { width: 68px; height: 68px; border-radius: 50%; background: var(--brand-soft); color: var(--brand); display: grid; place-items: center; margin: 0 auto 2px; }
+.lock-form { display: flex; flex-direction: column; gap: 10px; }
+.lock-form input { min-height: 50px; border: 1.5px solid var(--line); border-radius: 14px; padding: 8px 14px; font-size: 17px; background: var(--bg); text-align: center; outline: none; }
+.lock-form input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+.lock-msg { color: var(--danger); font-size: 14px; min-height: 20px; }
+.lock-or { color: var(--ink-2); font-size: 13px; margin: 2px 0; }
+.check-row { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 1.6; margin-bottom: 14px; }
+.check-row input { width: 22px; height: 22px; flex: none; accent-color: var(--brand); margin-top: 2px; }

@@ -1,5 +1,5 @@
 // النسخ الاحتياطي: بناء ملف JSON مع بصمة تحقق، التحقق قبل الاستيراد، تصدير CSV، وتسليم الملف للمستخدم.
-import { APP_ID, APP_VERSION, DB_VERSION } from './config.js';
+import { APP_ID, APP_VERSION, BACKUP_SCHEMA as DB_VERSION } from './config.js';
 import { DATA_STORES } from './db.js';
 import { validateRecord } from './schema.js';
 import { formatAmount } from './money.js';

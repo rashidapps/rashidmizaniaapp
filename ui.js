@@ -141,3 +141,28 @@ export function emptyState(iconName, title, text, action) {
   return h('div', { class: 'empty' }, h('div', { class: 'empty-ic' }, icon(iconName, 30)), h('h3', null, title), text ? h('p', null, text) : null, action || null);
 }
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/** نافذة إدخال كلمة مرور (مع تأكيد وإقرار اختياريين). تعيد النص أو null عند الإلغاء. */
+export function askSecret({ title, message, confirm = false, ack = '', submitText = 'متابعة', validate, label = 'كلمة المرور' }) {
+  return new Promise(resolve => {
+    let decided = false;
+    const p1 = h('input', { id: 'sec-1', type: 'password', autocomplete: confirm ? 'new-password' : 'current-password' });
+    const f1 = field(label, p1);
+    const p2 = confirm ? h('input', { id: 'sec-2', type: 'password', autocomplete: 'new-password' }) : null;
+    const f2 = p2 ? field('أعد كتابة كلمة المرور', p2) : null;
+    const cb = ack ? h('input', { type: 'checkbox', id: 'sec-ack' }) : null;
+    const ackErr = h('div', { class: 'field-err', hidden: true }, 'يجب الإقرار للمتابعة');
+    const btn = h('button', { class: 'btn btn-primary', type: 'submit', form: 'sec-form' }, submitText);
+    const form = h('form', { id: 'sec-form', novalidate: true, onSubmit: async e => {
+      e.preventDefault();
+      const v = p1.value;
+      f1.setError(v ? '' : 'اكتب كلمة المرور');
+      if (!v) return;
+      if (validate) { const err = await validate(v); f1.setError(err || ''); if (err) return; }
+      if (p2) { const ok = p2.value === v; f2.setError(ok ? '' : 'كلمتا المرور غير متطابقتين'); if (!ok) return; }
+      if (cb && !cb.checked) { ackErr.hidden = false; return; }
+      decided = true; s.close(); resolve(v);
+    } }, message ? h('p', { class: 'dialog-msg' }, message) : null, f1, f2, cb ? h('label', { class: 'check-row' }, cb, h('span', null, ack)) : null, ackErr);
+    const s = openSheet({ title, body: form, footer: [btn], onClose: () => { if (!decided) resolve(null); } });
+  });
+}
